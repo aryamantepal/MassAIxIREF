@@ -42,7 +42,6 @@ COMPS = [
 ]
 
 # Tools
-
 @tool
 def get_lease_details(property_id: str) -> dict:
     """Look up lease terms for a property by ID. Returns NOI, rent, escalations, etc."""
@@ -66,10 +65,47 @@ def calculate_metrics(noi: float, asking_price: float) -> dict:
 
 tools = [get_lease_details, get_comps, calculate_metrics]
 
-
+# Agent definition
 llm = ChatOpenAI(
     model="deepseek-chat",  # or "deepseek-reasoner"
     temperature=0,
     api_key=API_KEY,
     base_url="https://api.deepseek.com/v1",
-)
+).bind_tools(tools)
+
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
+
+def agent_node(state: State):
+    response = llm.invoke(state["messages"])
+    return {"messages": [response]}
+
+def should_continue(state: State):
+    last = state["messages"][-1]
+    return "tools" if last.tool_calls else END
+
+graph = StateGraph(State)
+graph.add_node("agent", agent_node)
+graph.add_node("tools", ToolNode(tools))
+graph.set_entry_point("agent")
+graph.add_conditional_edges("agent", should_continue)
+graph.add_edge("tools", "agent")
+app = graph.compile()
+
+# Main
+if __name__ == "__main__":
+    prompt = """You are a commercial real estate analyst. A user is asking whether to offer on a property.
+Use the tools to gather lease details, comparable sales, and compute metrics. Then give a clear recommendation.
+
+User question: Should we make an offer on 123 Main St at $4.2M? Property ID is "123_main".
+Walk me through your analysis."""
+    
+    for event in app.stream({"messages": [HumanMessage(content=prompt)]}):
+        for node, output in event.items():
+            msg = output["messages"][-1]
+            print(f"\n--- {node.upper()} ---")
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    print(f"  TOOL CALL: {tc['name']}({tc['args']})")
+            elif hasattr(msg, "content"):
+                print(f"  {msg.content}")

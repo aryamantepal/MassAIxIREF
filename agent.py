@@ -2,7 +2,7 @@ import os
 from typing import TypedDict, Annotated
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -65,9 +65,9 @@ def calculate_metrics(noi: float, asking_price: float) -> dict:
 
 tools = [get_lease_details, get_comps, calculate_metrics]
 
-# Agent definition
+# Agent
 llm = ChatOpenAI(
-    model="deepseek-chat",  # or "deepseek-reasoner"
+    model="deepseek-chat",
     temperature=0,
     api_key=API_KEY,
     base_url="https://api.deepseek.com/v1",
@@ -92,20 +92,44 @@ graph.add_conditional_edges("agent", should_continue)
 graph.add_edge("tools", "agent")
 app = graph.compile()
 
-# Main
-if __name__ == "__main__":
-    prompt = """You are a commercial real estate analyst. A user is asking whether to offer on a property.
-Use the tools to gather lease details, comparable sales, and compute metrics. Then give a clear recommendation.
+SYSTEM_PROMPT = """You are a commercial real estate analyst assistant. You can answer general questions conversationally, and when a user asks about specific properties or deals, use your tools (get_lease_details, get_comps, calculate_metrics) to gather data and give clear, numbers-backed recommendations.
 
-User question: Should we make an offer on 123 Main St at $4.2M? Property ID is "123_main".
-Walk me through your analysis."""
-    
-    for event in app.stream({"messages": [HumanMessage(content=prompt)]}):
-        for node, output in event.items():
-            msg = output["messages"][-1]
-            print(f"\n--- {node.upper()} ---")
+Available property IDs: "123_main", "456_broadway". Be concise and direct."""
+
+def chat():
+    print("CRE Analyst Chatbot. Type 'exit' or 'quit' to leave, 'reset' to clear history.\n")
+    history = [SystemMessage(content=SYSTEM_PROMPT)]
+
+    while True:
+        try:
+            user_input = input("You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nbye")
+            break
+
+        if not user_input:
+            continue
+        if user_input.lower() in {"exit", "quit"}:
+            print("bye")
+            break
+        if user_input.lower() == "reset":
+            history = [SystemMessage(content=SYSTEM_PROMPT)]
+            print("[history cleared]\n")
+            continue
+
+        history.append(HumanMessage(content=user_input))
+
+        final_state = None
+        for event in app.stream({"messages": history}, stream_mode="values"):
+            final_state = event
+            msg = event["messages"][-1]
             if hasattr(msg, "tool_calls") and msg.tool_calls:
                 for tc in msg.tool_calls:
-                    print(f"  TOOL CALL: {tc['name']}({tc['args']})")
-            elif hasattr(msg, "content"):
-                print(f"  {msg.content}")
+                    print(f"  [tool] {tc['name']}({tc['args']})")
+
+        # Update history with everything the graph produced
+        history = final_state["messages"]
+        print(f"\nAssistant: {history[-1].content}\n")
+
+if __name__ == "__main__":
+    chat()

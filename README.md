@@ -4,6 +4,7 @@ This repository features code on agentic AI in real estate; specifically, basic 
 
 The data is fake, for easy demo purposes, just to show the capability of agentic AI.
 
+Prompt: "Should we make an offer on 123 Main St at $4.2M? Property ID is "123_main". Walk me through your analysis."
 
 ### Reading Resources:
 https://www.anthropic.com/engineering/building-effective-agents

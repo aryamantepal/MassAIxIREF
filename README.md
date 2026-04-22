@@ -15,3 +15,12 @@ https://modelcontextprotocol.io/docs/getting-started/intro
 
 https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/
 
+### How to run this code
+
+pip install -r requirements.txt
+
+Create a .env file in the project root:
+DEEPSEEK_API_KEY=your_key_here
+
+Run:
+python agent.py
